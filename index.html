@@ -21,6 +21,21 @@
       background: #000;
       border: 2px solid #fff;
       max-width: 100%;
+      cursor: none; /* hide the mouse pointer over the game, the paddle is your pointer */
+    }
+    button {
+      margin-top: 12px;
+      padding: 8px 24px;
+      font-family: monospace;
+      font-size: 18px;
+      background: #000;
+      color: #fff;
+      border: 2px solid #fff;
+      cursor: pointer;
+    }
+    button:hover {
+      background: #fff;
+      color: #000;
     }
   </style>
 </head>
@@ -30,7 +45,11 @@
   <!-- The <canvas> is a blank rectangle we can draw shapes on with JavaScript. -->
   <canvas id="game" width="800" height="500"></canvas>
 
-  <p>Move your paddle with <b>W</b>/<b>S</b> or the <b>Arrow Up</b>/<b>Arrow Down</b> keys. First to 5 wins!</p>
+  <!-- A normal web-page button. JavaScript below decides what clicking it does. -->
+  <button id="pauseButton">Pause</button>
+
+  <p>Move your paddle with the <b>mouse</b>, <b>W</b>/<b>S</b>, or the <b>Arrow Up</b>/<b>Arrow Down</b> keys.<br>
+     Press <b>P</b> or click the button to pause. First to 5 wins!</p>
 
   <script>
     // =====================================================================
@@ -76,6 +95,7 @@
     };
 
     let gameOver = false;
+    let paused = false;
 
     // =====================================================================
     // 3. KEYBOARD INPUT: remember which keys are currently held down
@@ -94,6 +114,11 @@
       if (event.key === " " && gameOver) {
         restartGame();
       }
+
+      // Press P to pause or unpause
+      if (event.key === "p" || event.key === "P") {
+        togglePause();
+      }
     });
 
     document.addEventListener("keyup", (event) => {
@@ -101,10 +126,51 @@
     });
 
     // =====================================================================
+    // 3b. MOUSE INPUT: put the paddle wherever the mouse is
+    // =====================================================================
+    canvas.addEventListener("mousemove", (event) => {
+      if (paused || gameOver) return;
+
+      // event.clientY is the mouse's position on the whole browser window.
+      // getBoundingClientRect() tells us where the canvas sits on the window,
+      // so subtracting rect.top gives the mouse's position INSIDE the canvas.
+      const rect = canvas.getBoundingClientRect();
+
+      // If the window is narrow, the browser shrinks the canvas on screen,
+      // but the game still thinks it's 500 pixels tall. This ratio converts
+      // "screen pixels" into "game pixels".
+      const scale = canvas.height / rect.height;
+      const mouseY = (event.clientY - rect.top) * scale;
+
+      // Center the paddle on the mouse. (update() keeps it on screen.)
+      player.y = mouseY - PADDLE_HEIGHT / 2;
+    });
+
+    // =====================================================================
+    // 3c. PAUSE BUTTON
+    // =====================================================================
+    const pauseButton = document.getElementById("pauseButton");
+
+    pauseButton.addEventListener("click", () => {
+      togglePause();
+      // Take keyboard focus off the button. Otherwise pressing Space later
+      // would "click" the button again by accident.
+      pauseButton.blur();
+    });
+
+    function togglePause() {
+      if (gameOver) return; // nothing to pause once the game has ended
+      paused = !paused; // "!" flips true to false and false to true
+      pauseButton.textContent = paused ? "Resume" : "Pause";
+    }
+
+    // =====================================================================
     // 4. UPDATE: change the numbers (move things, check collisions)
     // =====================================================================
     function update() {
-      if (gameOver) return; // freeze everything once someone wins
+      // Freeze everything once someone wins or while paused.
+      // We still DRAW every frame, we just stop changing the numbers.
+      if (gameOver || paused) return;
 
       // --- Move the player's paddle based on keys held ---
       if (keys["w"] || keys["W"] || keys["ArrowUp"]) {
@@ -242,6 +308,14 @@
         ctx.fillText(message, canvas.width / 2, canvas.height / 2);
         ctx.font = "20px monospace";
         ctx.fillText("Press SPACE to play again", canvas.width / 2, canvas.height / 2 + 40);
+      }
+
+      // Paused message
+      if (paused) {
+        ctx.font = "56px monospace";
+        ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
+        ctx.font = "20px monospace";
+        ctx.fillText("Press P or click Resume", canvas.width / 2, canvas.height / 2 + 40);
       }
     }
 
