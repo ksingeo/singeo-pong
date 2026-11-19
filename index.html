@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Singeo Pong</title>
+  <style>
+    /* CSS controls how the page LOOKS. */
+    body {
+      margin: 0;
+      background: #111;
+      color: #fff;
+      font-family: monospace;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+    }
+    canvas {
+      background: #000;
+      border: 2px solid #fff;
+      max-width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <h1>PONG</h1>
+
+  <!-- The <canvas> is a blank rectangle we can draw shapes on with JavaScript. -->
+  <canvas id="game" width="800" height="500"></canvas>
+
+  <p>Move your paddle with <b>W</b>/<b>S</b> or the <b>Arrow Up</b>/<b>Arrow Down</b> keys. First to 5 wins!</p>
+
+  <script>
+    // =====================================================================
+    // 1. SETUP: grab the canvas so we can draw on it
+    // =====================================================================
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d"); // "ctx" is our paintbrush
+
+    // Coordinates: (0, 0) is the TOP-LEFT corner.
+    // x grows to the right, y grows DOWNWARD.
+
+    // =====================================================================
+    // 2. GAME OBJECTS: each one is just a bundle of numbers
+    // =====================================================================
+    const PADDLE_WIDTH = 12;
+    const PADDLE_HEIGHT = 90;
+    const WINNING_SCORE = 5;
+
+    // The player's paddle (left side)
+    const player = {
+      x: 20,
+      y: canvas.height / 2 - PADDLE_HEIGHT / 2, // start centered vertically
+      speed: 7,
+      score: 0,
+    };
+
+    // The computer's paddle (right side)
+    const computer = {
+      x: canvas.width - 20 - PADDLE_WIDTH,
+      y: canvas.height / 2 - PADDLE_HEIGHT / 2,
+      speed: 5, // a bit slower than the ball, so you can beat it
+      score: 0,
+    };
+
+    // The ball. dx and dy are its speed in each direction
+    // (how many pixels it moves every frame).
+    const ball = {
+      x: canvas.width / 2,
+      y: canvas.height / 2,
+      size: 12,
+      dx: 5,
+      dy: 3,
+    };
+
+    let gameOver = false;
+
+    // =====================================================================
+    // 3. KEYBOARD INPUT: remember which keys are currently held down
+    // =====================================================================
+    const keys = {};
+
+    document.addEventListener("keydown", (event) => {
+      keys[event.key] = true;
+
+      // Stop the arrow keys / space from scrolling the web page
+      if (["ArrowUp", "ArrowDown", " "].includes(event.key)) {
+        event.preventDefault();
+      }
+
+      // Press Space to restart after the game ends
+      if (event.key === " " && gameOver) {
+        restartGame();
+      }
+    });
+
+    document.addEventListener("keyup", (event) => {
+      keys[event.key] = false;
+    });
+
+    // =====================================================================
+    // 4. UPDATE: change the numbers (move things, check collisions)
+    // =====================================================================
+    function update() {
+      if (gameOver) return; // freeze everything once someone wins
+
+      // --- Move the player's paddle based on keys held ---
+      if (keys["w"] || keys["W"] || keys["ArrowUp"]) {
+        player.y -= player.speed; // subtracting y moves UP
+      }
+      if (keys["s"] || keys["S"] || keys["ArrowDown"]) {
+        player.y += player.speed; // adding y moves DOWN
+      }
+
+      // --- Simple computer "AI": follow the ball ---
+      const computerCenter = computer.y + PADDLE_HEIGHT / 2;
+      if (computerCenter < ball.y - 10) {
+        computer.y += computer.speed;
+      } else if (computerCenter > ball.y + 10) {
+        computer.y -= computer.speed;
+      }
+
+      // --- Keep both paddles inside the screen ---
+      player.y = clamp(player.y, 0, canvas.height - PADDLE_HEIGHT);
+      computer.y = clamp(computer.y, 0, canvas.height - PADDLE_HEIGHT);
+
+      // --- Move the ball ---
+      ball.x += ball.dx;
+      ball.y += ball.dy;
+
+      // --- Bounce off the top and bottom walls ---
+      // Flipping dy (multiplying by -1) reverses vertical direction.
+      if (ball.y <= 0) {
+        ball.y = 0;
+        ball.dy *= -1;
+      }
+      if (ball.y + ball.size >= canvas.height) {
+        ball.y = canvas.height - ball.size;
+        ball.dy *= -1;
+      }
+
+      // --- Bounce off the paddles ---
+      if (ball.dx < 0 && isTouching(ball, player)) {
+        bounceOffPaddle(player);
+      }
+      if (ball.dx > 0 && isTouching(ball, computer)) {
+        bounceOffPaddle(computer);
+      }
+
+      // --- Scoring: ball went past a paddle ---
+      if (ball.x + ball.size < 0) {
+        computer.score++;
+        resetBall(1); // serve toward the computer
+      } else if (ball.x > canvas.width) {
+        player.score++;
+        resetBall(-1); // serve toward the player
+      }
+
+      // --- Did anyone win? ---
+      if (player.score >= WINNING_SCORE || computer.score >= WINNING_SCORE) {
+        gameOver = true;
+      }
+    }
+
+    // Is the ball's square overlapping the paddle's rectangle?
+    // (This is called "AABB collision": two boxes overlap if they
+    //  overlap on BOTH the x axis and the y axis.)
+    function isTouching(b, paddle) {
+      return (
+        b.x < paddle.x + PADDLE_WIDTH &&
+        b.x + b.size > paddle.x &&
+        b.y < paddle.y + PADDLE_HEIGHT &&
+        b.y + b.size > paddle.y
+      );
+    }
+
+    function bounceOffPaddle(paddle) {
+      // Reverse horizontal direction and speed up a little each hit
+      ball.dx = -ball.dx * 1.05;
+
+      // Where on the paddle did it hit? -1 = top edge, 0 = middle, 1 = bottom edge.
+      // Hitting near the edges sends the ball off at a steeper angle,
+      // which gives the player some control over their shots.
+      const paddleCenter = paddle.y + PADDLE_HEIGHT / 2;
+      const ballCenter = ball.y + ball.size / 2;
+      const hitPosition = (ballCenter - paddleCenter) / (PADDLE_HEIGHT / 2);
+      ball.dy = hitPosition * 6;
+    }
+
+    // Put the ball back in the middle and serve it in `direction` (1 = right, -1 = left)
+    function resetBall(direction) {
+      ball.x = canvas.width / 2;
+      ball.y = canvas.height / 2;
+      ball.dx = 5 * direction;
+      ball.dy = (Math.random() * 6) - 3; // random angle between -3 and 3
+    }
+
+    function restartGame() {
+      player.score = 0;
+      computer.score = 0;
+      gameOver = false;
+      resetBall(1);
+    }
+
+    // Keep a number between a min and max value
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
+    // =====================================================================
+    // 5. DRAW: paint the current state onto the canvas
+    // =====================================================================
+    function draw() {
+      // Wipe the screen black (otherwise old frames leave trails)
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Dashed center line
+      ctx.fillStyle = "#555";
+      for (let y = 0; y < canvas.height; y += 30) {
+        ctx.fillRect(canvas.width / 2 - 2, y, 4, 15);
+      }
+
+      // Paddles and ball are just white rectangles
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(player.x, player.y, PADDLE_WIDTH, PADDLE_HEIGHT);
+      ctx.fillRect(computer.x, computer.y, PADDLE_WIDTH, PADDLE_HEIGHT);
+      ctx.fillRect(ball.x, ball.y, ball.size, ball.size);
+
+      // Scores
+      ctx.font = "48px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(player.score, canvas.width / 4, 60);
+      ctx.fillText(computer.score, (canvas.width * 3) / 4, 60);
+
+      // Game-over message
+      if (gameOver) {
+        const message = player.score >= WINNING_SCORE ? "YOU WIN!" : "COMPUTER WINS";
+        ctx.font = "56px monospace";
+        ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+        ctx.font = "20px monospace";
+        ctx.fillText("Press SPACE to play again", canvas.width / 2, canvas.height / 2 + 40);
+      }
+    }
+
+    // =====================================================================
+    // 6. THE GAME LOOP: update, draw, repeat ~60 times per second
+    // =====================================================================
+    function gameLoop() {
+      update();
+      draw();
+      // Ask the browser to call gameLoop again before the next screen refresh
+      requestAnimationFrame(gameLoop);
+    }
+
+    gameLoop(); // kick it off!
+  </script>
+</body>
+</html>
