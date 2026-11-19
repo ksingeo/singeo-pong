@@ -3,53 +3,115 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Singeo Pong</title>
+  <title>Singeo Pong: Neon Nights</title>
+
+  <!-- Load two free fonts from Google Fonts: a neon-sign style one and a bold one -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Monoton&family=Bungee&display=swap" rel="stylesheet">
+
   <style>
     /* CSS controls how the page LOOKS. */
+
+    /* "Variables" for our colors, so we can reuse them everywhere */
+    :root {
+      --pink: #ff2fb3;
+      --cyan: #22e6ff;
+      --yellow: #ffd23f;
+      --night: #12061f;
+    }
+
     body {
       margin: 0;
-      background: #111;
+      padding: 16px;
+      /* A dark purple background that fades to black at the bottom */
+      background: linear-gradient(#2a0b3d, var(--night) 60%, #000);
       color: #fff;
-      font-family: monospace;
+      font-family: "Bungee", sans-serif;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
+      box-sizing: border-box;
     }
+
+    h1 {
+      font-family: "Monoton", cursive;
+      font-weight: normal;
+      font-size: clamp(32px, 7vw, 64px);
+      margin: 0 0 12px;
+      color: var(--pink);
+      /* text-shadow makes the letters glow like a neon sign */
+      text-shadow: 0 0 8px var(--pink), 0 0 24px var(--pink);
+      text-align: center;
+    }
+
     canvas {
-      background: #000;
-      border: 2px solid #fff;
+      border: 3px solid var(--cyan);
+      box-shadow: 0 0 20px var(--cyan);
       max-width: 100%;
       cursor: none; /* hide the mouse pointer over the game, the paddle is your pointer */
     }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      justify-content: center;
+      margin: 0 0 12px;
+    }
+
     button {
-      margin-top: 12px;
-      padding: 8px 24px;
-      font-family: monospace;
-      font-size: 18px;
-      background: #000;
-      color: #fff;
-      border: 2px solid #fff;
+      padding: 8px 18px;
+      font-family: "Bungee", sans-serif;
+      font-size: 16px;
+      background: transparent;
+      color: var(--cyan);
+      border: 2px solid var(--cyan);
+      border-radius: 6px;
       cursor: pointer;
     }
     button:hover {
-      background: #fff;
-      color: #000;
+      box-shadow: 0 0 12px var(--cyan);
     }
+    /* The difficulty that's currently chosen gets filled in pink */
+    button.selected {
+      background: var(--pink);
+      border-color: var(--pink);
+      color: #fff;
+      box-shadow: 0 0 12px var(--pink);
+    }
+
+    p {
+      font-family: sans-serif;
+      text-align: center;
+      color: #ddd;
+      line-height: 1.5;
+    }
+    b { color: var(--yellow); }
   </style>
 </head>
 <body>
-  <h1>PONG</h1>
+  <h1>Neon Nights</h1>
+
+  <!-- Difficulty buttons. "data-level" stores which level each button means. -->
+  <div class="controls">
+    <button class="difficulty" data-level="easy">Easy</button>
+    <button class="difficulty selected" data-level="normal">Normal</button>
+    <button class="difficulty" data-level="hard">Hard</button>
+  </div>
 
   <!-- The <canvas> is a blank rectangle we can draw shapes on with JavaScript. -->
   <canvas id="game" width="800" height="500"></canvas>
 
-  <!-- A normal web-page button. JavaScript below decides what clicking it does. -->
-  <button id="pauseButton">Pause</button>
+  <div class="controls" style="margin-top: 12px;">
+    <button id="pauseButton">Pause</button>
+  </div>
 
   <p>Move your paddle with the <b>mouse</b>, <b>W</b>/<b>S</b>, or the <b>Arrow Up</b>/<b>Arrow Down</b> keys.<br>
-     Press <b>P</b> or click the button to pause. First to 5 wins!</p>
+     Pick a difficulty with the buttons or keys <b>1</b>, <b>2</b>, <b>3</b> (this starts a new game).<br>
+     Press <b>P</b> to pause. First to 5 wins!</p>
 
   <script>
     // =====================================================================
@@ -61,14 +123,37 @@
     // Coordinates: (0, 0) is the TOP-LEFT corner.
     // x grows to the right, y grows DOWNWARD.
 
+    // Theme colors (same ones as in the CSS above)
+    const PINK = "#ff2fb3";
+    const CYAN = "#22e6ff";
+    const YELLOW = "#ffd23f";
+
     // =====================================================================
-    // 2. GAME OBJECTS: each one is just a bundle of numbers
+    // 2. DIFFICULTY LEVELS: a "lookup table" of settings
+    // =====================================================================
+    // Instead of writing lots of if-statements, we keep each level's
+    // numbers together. To make the game harder, we just read a different row.
+    //
+    //   computerSpeed: how fast the computer paddle can move
+    //   computerAim:   how close the computer tries to get to the ball
+    //                  (bigger = sloppier, so it misses more)
+    //   ballSpeed:     how fast the ball starts after each point
+    const DIFFICULTY = {
+      easy:   { computerSpeed: 3.5, computerAim: 25, ballSpeed: 4 },
+      normal: { computerSpeed: 5,   computerAim: 10, ballSpeed: 5 },
+      hard:   { computerSpeed: 7,   computerAim: 4,  ballSpeed: 6.5 },
+    };
+
+    let level = DIFFICULTY.normal; // the settings currently in use
+
+    // =====================================================================
+    // 3. GAME OBJECTS: each one is just a bundle of numbers
     // =====================================================================
     const PADDLE_WIDTH = 12;
     const PADDLE_HEIGHT = 90;
     const WINNING_SCORE = 5;
 
-    // The player's paddle (left side)
+    // The player's paddle (left side, pink)
     const player = {
       x: 20,
       y: canvas.height / 2 - PADDLE_HEIGHT / 2, // start centered vertically
@@ -76,11 +161,10 @@
       score: 0,
     };
 
-    // The computer's paddle (right side)
+    // The computer's paddle (right side, cyan). Its speed comes from the difficulty.
     const computer = {
       x: canvas.width - 20 - PADDLE_WIDTH,
       y: canvas.height / 2 - PADDLE_HEIGHT / 2,
-      speed: 5, // a bit slower than the ball, so you can beat it
       score: 0,
     };
 
@@ -89,7 +173,7 @@
     const ball = {
       x: canvas.width / 2,
       y: canvas.height / 2,
-      size: 12,
+      size: 14,
       dx: 5,
       dy: 3,
     };
@@ -98,7 +182,7 @@
     let paused = false;
 
     // =====================================================================
-    // 3. KEYBOARD INPUT: remember which keys are currently held down
+    // 4. KEYBOARD INPUT: remember which keys are currently held down
     // =====================================================================
     const keys = {};
 
@@ -119,6 +203,11 @@
       if (event.key === "p" || event.key === "P") {
         togglePause();
       }
+
+      // Number keys choose a difficulty
+      if (event.key === "1") setDifficulty("easy");
+      if (event.key === "2") setDifficulty("normal");
+      if (event.key === "3") setDifficulty("hard");
     });
 
     document.addEventListener("keyup", (event) => {
@@ -126,7 +215,7 @@
     });
 
     // =====================================================================
-    // 3b. MOUSE INPUT: put the paddle wherever the mouse is
+    // 4b. MOUSE INPUT: put the paddle wherever the mouse is
     // =====================================================================
     canvas.addEventListener("mousemove", (event) => {
       if (paused || gameOver) return;
@@ -147,7 +236,7 @@
     });
 
     // =====================================================================
-    // 3c. PAUSE BUTTON
+    // 4c. BUTTONS: pause and difficulty
     // =====================================================================
     const pauseButton = document.getElementById("pauseButton");
 
@@ -164,8 +253,29 @@
       pauseButton.textContent = paused ? "Resume" : "Pause";
     }
 
+    // querySelectorAll finds EVERY element with class="difficulty" (all 3 buttons)
+    const difficultyButtons = document.querySelectorAll(".difficulty");
+
+    difficultyButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        setDifficulty(button.dataset.level); // dataset.level reads data-level="..."
+        button.blur();
+      });
+    });
+
+    function setDifficulty(name) {
+      level = DIFFICULTY[name];
+
+      // Highlight the chosen button, un-highlight the others
+      difficultyButtons.forEach((button) => {
+        button.classList.toggle("selected", button.dataset.level === name);
+      });
+
+      restartGame(); // a new difficulty means a fresh game
+    }
+
     // =====================================================================
-    // 4. UPDATE: change the numbers (move things, check collisions)
+    // 5. UPDATE: change the numbers (move things, check collisions)
     // =====================================================================
     function update() {
       // Freeze everything once someone wins or while paused.
@@ -181,11 +291,12 @@
       }
 
       // --- Simple computer "AI": follow the ball ---
+      // How fast and how accurately depends on the difficulty level.
       const computerCenter = computer.y + PADDLE_HEIGHT / 2;
-      if (computerCenter < ball.y - 10) {
-        computer.y += computer.speed;
-      } else if (computerCenter > ball.y + 10) {
-        computer.y -= computer.speed;
+      if (computerCenter < ball.y - level.computerAim) {
+        computer.y += level.computerSpeed;
+      } else if (computerCenter > ball.y + level.computerAim) {
+        computer.y -= level.computerSpeed;
       }
 
       // --- Keep both paddles inside the screen ---
@@ -259,7 +370,7 @@
     function resetBall(direction) {
       ball.x = canvas.width / 2;
       ball.y = canvas.height / 2;
-      ball.dx = 5 * direction;
+      ball.dx = level.ballSpeed * direction;
       ball.dy = (Math.random() * 6) - 3; // random angle between -3 and 3
     }
 
@@ -267,6 +378,8 @@
       player.score = 0;
       computer.score = 0;
       gameOver = false;
+      paused = false;
+      pauseButton.textContent = "Pause";
       resetBall(1);
     }
 
@@ -276,51 +389,201 @@
     }
 
     // =====================================================================
-    // 5. DRAW: paint the current state onto the canvas
+    // 6. THE BACKGROUND: a neon city sunset
     // =====================================================================
-    function draw() {
-      // Wipe the screen black (otherwise old frames leave trails)
-      ctx.fillStyle = "#000";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // The background never changes, so we paint it ONCE onto a hidden canvas
+    // (one that's never put on the page). Every frame we just copy that
+    // finished picture, which is much faster than repainting it 60 times a second.
+    const background = document.createElement("canvas");
+    background.width = canvas.width;
+    background.height = canvas.height;
+    paintBackground(background.getContext("2d"));
 
-      // Dashed center line
-      ctx.fillStyle = "#555";
-      for (let y = 0; y < canvas.height; y += 30) {
-        ctx.fillRect(canvas.width / 2 - 2, y, 4, 15);
+    function paintBackground(g) {
+      const W = background.width;
+      const H = background.height;
+      const horizon = H * 0.62; // where the sky meets the water
+
+      // --- Sky: a gradient fades smoothly between colors ---
+      const sky = g.createLinearGradient(0, 0, 0, horizon);
+      sky.addColorStop(0, "#1a0533");   // deep purple at the top
+      sky.addColorStop(0.55, "#7a1f6e"); // magenta
+      sky.addColorStop(1, "#ff7b54");   // orange near the horizon
+      g.fillStyle = sky;
+      g.fillRect(0, 0, W, horizon);
+
+      // --- A few stars (random dots in the upper sky) ---
+      g.fillStyle = "rgba(255, 255, 255, 0.7)";
+      for (let i = 0; i < 60; i++) {
+        g.fillRect(Math.random() * W, Math.random() * horizon * 0.5, 2, 2);
       }
 
-      // Paddles and ball are just white rectangles
-      ctx.fillStyle = "#fff";
-      ctx.fillRect(player.x, player.y, PADDLE_WIDTH, PADDLE_HEIGHT);
-      ctx.fillRect(computer.x, computer.y, PADDLE_WIDTH, PADDLE_HEIGHT);
-      ctx.fillRect(ball.x, ball.y, ball.size, ball.size);
+      // --- The sun: a yellow-to-pink circle with stripes cut through it ---
+      const sunX = W / 2;
+      const sunY = horizon - 10;
+      const sunR = 110;
+      const sun = g.createLinearGradient(0, sunY - sunR, 0, sunY);
+      sun.addColorStop(0, YELLOW);
+      sun.addColorStop(1, PINK);
+      g.fillStyle = sun;
+      g.beginPath();
+      g.arc(sunX, sunY, sunR, Math.PI, 0); // only the top half (a semicircle)
+      g.fill();
 
-      // Scores
-      ctx.font = "48px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(player.score, canvas.width / 4, 60);
-      ctx.fillText(computer.score, (canvas.width * 3) / 4, 60);
-
-      // Game-over message
-      if (gameOver) {
-        const message = player.score >= WINNING_SCORE ? "YOU WIN!" : "COMPUTER WINS";
-        ctx.font = "56px monospace";
-        ctx.fillText(message, canvas.width / 2, canvas.height / 2);
-        ctx.font = "20px monospace";
-        ctx.fillText("Press SPACE to play again", canvas.width / 2, canvas.height / 2 + 40);
+      // Stripes: thin bands of sky color across the lower part of the sun
+      g.fillStyle = "#ff7b54";
+      for (let i = 0; i < 5; i++) {
+        const y = sunY - 50 + i * 12;
+        g.fillRect(sunX - sunR, y, sunR * 2, 2 + i);
       }
 
-      // Paused message
-      if (paused) {
-        ctx.font = "56px monospace";
-        ctx.fillText("PAUSED", canvas.width / 2, canvas.height / 2);
-        ctx.font = "20px monospace";
-        ctx.fillText("Press P or click Resume", canvas.width / 2, canvas.height / 2 + 40);
+      // --- City skyline: dark rectangles of random heights ---
+      g.fillStyle = "#1b0a2a";
+      let x = 0;
+      while (x < W) {
+        const width = 25 + Math.random() * 40;
+        const height = 30 + Math.random() * 90;
+        g.fillRect(x, horizon - height, width, height);
+
+        // Little lit windows in each building
+        g.fillStyle = "rgba(255, 210, 63, 0.6)";
+        for (let wy = horizon - height + 8; wy < horizon - 6; wy += 12) {
+          for (let wx = x + 5; wx < x + width - 6; wx += 10) {
+            if (Math.random() < 0.35) g.fillRect(wx, wy, 4, 5);
+          }
+        }
+        g.fillStyle = "#1b0a2a";
+        x += width + 4;
+      }
+
+      // --- Water: dark below the horizon ---
+      const water = g.createLinearGradient(0, horizon, 0, H);
+      water.addColorStop(0, "#2b0b45");
+      water.addColorStop(1, "#05010a");
+      g.fillStyle = water;
+      g.fillRect(0, horizon, W, H - horizon);
+
+      // Sun reflections: short pink lines shimmering on the water
+      g.fillStyle = "rgba(255, 47, 179, 0.5)";
+      for (let i = 0; i < 8; i++) {
+        const lineWidth = 140 - i * 15;
+        g.fillRect(sunX - lineWidth / 2, horizon + 8 + i * 14, lineWidth, 3);
+      }
+
+      // --- Palm trees on both sides ---
+      drawPalm(g, 70, H, 1);
+      drawPalm(g, W - 70, H, -1);
+    }
+
+    // Draws one palm tree silhouette. `lean` is 1 to lean right, -1 to lean left.
+    function drawPalm(g, baseX, baseY, lean) {
+      const topX = baseX + 40 * lean;
+      const topY = baseY - 260;
+
+      g.strokeStyle = "#0a0212";
+      g.fillStyle = "#0a0212";
+
+      // Trunk: a curved thick line (a "quadratic curve" bends toward a control point)
+      g.lineWidth = 12;
+      g.lineCap = "round";
+      g.beginPath();
+      g.moveTo(baseX, baseY);
+      g.quadraticCurveTo(baseX - 10 * lean, baseY - 150, topX, topY);
+      g.stroke();
+
+      // Leaves: 7 curved lines spreading out from the top
+      g.lineWidth = 7;
+      for (let i = 0; i < 7; i++) {
+        const angle = Math.PI + (i / 6) * Math.PI; // spread across a half circle
+        const endX = topX + Math.cos(angle) * 85;
+        const endY = topY + Math.sin(angle) * 40 + 45; // droop downward
+        g.beginPath();
+        g.moveTo(topX, topY);
+        g.quadraticCurveTo(topX + Math.cos(angle) * 50, topY - 25, endX, endY);
+        g.stroke();
       }
     }
 
     // =====================================================================
-    // 6. THE GAME LOOP: update, draw, repeat ~60 times per second
+    // 7. DRAW: paint the current state onto the canvas
+    // =====================================================================
+    function draw() {
+      // Copy the pre-painted background (this also wipes the last frame)
+      ctx.drawImage(background, 0, 0);
+
+      // Dim it slightly so the paddles and ball stand out
+      ctx.fillStyle = "rgba(0, 0, 0, 0.25)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Dashed center line
+      ctx.fillStyle = "rgba(255, 255, 255, 0.35)";
+      for (let y = 0; y < canvas.height; y += 30) {
+        ctx.fillRect(canvas.width / 2 - 2, y, 4, 15);
+      }
+
+      // Paddles and ball, each with a neon glow.
+      // shadowBlur + shadowColor make whatever we draw next glow.
+      drawGlowingRect(player.x, player.y, PADDLE_WIDTH, PADDLE_HEIGHT, PINK);
+      drawGlowingRect(computer.x, computer.y, PADDLE_WIDTH, PADDLE_HEIGHT, CYAN);
+
+      ctx.shadowColor = YELLOW;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = YELLOW;
+      ctx.beginPath();
+      // The ball's x/y is its top-left corner, so its center is half its size in
+      ctx.arc(ball.x + ball.size / 2, ball.y + ball.size / 2, ball.size / 2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0; // turn glow off so it doesn't affect other drawings
+
+      // Scores, in each player's color
+      ctx.font = "48px Bungee, sans-serif";
+      ctx.textAlign = "center";
+      drawGlowingText(player.score, canvas.width / 4, 70, PINK);
+      drawGlowingText(computer.score, (canvas.width * 3) / 4, 70, CYAN);
+
+      // Game-over message
+      if (gameOver) {
+        darkenScreen();
+        const youWon = player.score >= WINNING_SCORE;
+        ctx.font = "52px Bungee, sans-serif";
+        drawGlowingText(youWon ? "YOU RULE THE CITY" : "BUSTED", canvas.width / 2, canvas.height / 2, youWon ? YELLOW : PINK);
+        ctx.font = "18px Bungee, sans-serif";
+        drawGlowingText("Press SPACE to play again", canvas.width / 2, canvas.height / 2 + 45, CYAN);
+      }
+
+      // Paused message
+      if (paused) {
+        darkenScreen();
+        ctx.font = "56px Bungee, sans-serif";
+        drawGlowingText("PAUSED", canvas.width / 2, canvas.height / 2, CYAN);
+        ctx.font = "18px Bungee, sans-serif";
+        drawGlowingText("Press P or click Resume", canvas.width / 2, canvas.height / 2 + 45, PINK);
+      }
+    }
+
+    function drawGlowingRect(x, y, width, height, color) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 20;
+      ctx.fillStyle = color;
+      ctx.fillRect(x, y, width, height);
+      ctx.shadowBlur = 0;
+    }
+
+    function drawGlowingText(text, x, y, color) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 15;
+      ctx.fillStyle = color;
+      ctx.fillText(text, x, y);
+      ctx.shadowBlur = 0;
+    }
+
+    function darkenScreen() {
+      ctx.fillStyle = "rgba(0, 0, 0, 0.55)";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
+
+    // =====================================================================
+    // 8. THE GAME LOOP: update, draw, repeat ~60 times per second
     // =====================================================================
     function gameLoop() {
       update();
@@ -329,7 +592,8 @@
       requestAnimationFrame(gameLoop);
     }
 
-    gameLoop(); // kick it off!
+    resetBall(1); // first serve, at the starting difficulty's speed
+    gameLoop();   // kick it off!
   </script>
 </body>
 </html>
